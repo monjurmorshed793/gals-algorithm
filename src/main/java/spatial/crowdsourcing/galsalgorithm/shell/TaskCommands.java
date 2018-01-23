@@ -26,11 +26,12 @@ public class TaskCommands {
 
     @ShellMethod("Generate status")
    public String generateStatus(
-           @ShellOption(help="worker number") Integer workerNumber
+           @ShellOption(help="worker number") int workerNumber
     ){
-        List<Long> workerList = spatialDataRepository.findDistinctByLocationId().subList(0, 12);
-        List<SpatialData> spatialDataList = spatialDataRepository.findByUserIdIn(workerList);
-        return spatialDataList.size()+"";
+        List<Long> userIds = spatialDataRepository.findDistinctUserList().subList(0,workerNumber);
+
+        List<SpatialData> spatialData = spatialDataRepository.findByUserIdIn(userIds);
+        return spatialData.size()+"";
    }
 
 
