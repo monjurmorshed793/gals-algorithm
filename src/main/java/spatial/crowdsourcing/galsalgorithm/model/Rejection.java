@@ -20,6 +20,12 @@ public class Rejection {
   public Rejection() {
   }
 
+  public Rejection(String pDate, Long pUserId, Long pTaskId) {
+    date = pDate;
+    userId = pUserId;
+    taskId = pTaskId;
+  }
+
   public String getDate() {
     return date;
   }

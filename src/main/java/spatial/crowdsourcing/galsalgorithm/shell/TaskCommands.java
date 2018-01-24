@@ -5,8 +5,10 @@ import org.springframework.shell.standard.ShellComponent;
 import org.springframework.shell.standard.ShellMethod;
 import org.springframework.shell.standard.ShellOption;
 import spatial.crowdsourcing.galsalgorithm.model.CrowdSourceStore;
+import spatial.crowdsourcing.galsalgorithm.model.Rejection;
 import spatial.crowdsourcing.galsalgorithm.model.SpatialData;
 import spatial.crowdsourcing.galsalgorithm.repositories.CrowdSourceStoreRepository;
+import spatial.crowdsourcing.galsalgorithm.repositories.RejectionRepository;
 import spatial.crowdsourcing.galsalgorithm.repositories.SpatialDataRepository;
 import spatial.crowdsourcing.galsalgorithm.shell.helper.WorkerCapacity;
 import spatial.crowdsourcing.galsalgorithm.shell.helper.WorkerTaskDistance;
@@ -21,10 +23,11 @@ public class TaskCommands {
     SpatialDataRepository spatialDataRepository;
   @Autowired
   CrowdSourceStoreRepository mCrowdSourceStoreRepository;
+  @Autowired
+  RejectionRepository mRejectionRepository;
 
-    @ShellMethod("Show number of distinct of workers and tasks: (wt)")
-    public String process(
-            @ShellOption(help = "Type")  String worker
+  @ShellMethod("Show number of distinct of workers and tasks")
+  public String getStatistics(
     ){
         String result="";
         List<Long> taskList = spatialDataRepository.findDistinctByLocationId();
@@ -43,7 +46,7 @@ public class TaskCommands {
       Map<String, List<SpatialData>> userAndDateMap = new HashMap<>();
       Map<String, List<SpatialData>> dateMap = new HashMap<>();
       spatialData.forEach(s -> createUserAndDateMap(userAndDateMap, dateMap, s));
-      mCrowdSourceStoreRepository.deleteAllInBatch();
+      mCrowdSourceStoreRepository.deleteAll();
       distinctDates.forEach(date -> {
         createDateBasedCrowdSource(userAndDateMap, dateMap, date);
       });
@@ -78,14 +81,10 @@ public class TaskCommands {
       if (pLocationMap.isEmpty())
         break;
       List<WorkerTaskDistance> workerTaskDistances = new ArrayList<>();
-      for (Map.Entry<Long, SpatialData> entry : pLocationMap.entrySet()) {
-        SpatialData spatialData = pLocationMap.get(entry.getKey());
-        double latDistance = Math.toRadians(spatialData.getLatitude() - workerInitialLocation.getLatitude());
-        double longDistance = Math.toRadians(spatialData.getLongitude() - workerInitialLocation.getLongitude());
-        Double distance = distance(workerInitialLocation.getLatitude(), workerInitialLocation.getLongitude(), spatialData.getLatitude(), spatialData.getLongitude(), 'N');
-        workerTaskDistances.add(new WorkerTaskDistance(workerInitialLocation.getUserId(), spatialData.getLocationId(), distance));
-      }
+      getDistanceFromLocation(pLocationMap, workerInitialLocation, workerTaskDistances, date, pWorkerCapacityMap.get(c));
       workerTaskDistances.sort((w1, w2) -> w1.getDistance().compareTo(w2.getDistance()));
+      if (workerTaskDistances.size() == 0)
+        break;
       workerInitialLocation = pLocationMap.get(workerTaskDistances.get(0).getLocationId());
       CrowdSourceStore crowdSourceStore = new CrowdSourceStore();
       crowdSourceStore.setDate(date);
@@ -93,6 +92,21 @@ public class TaskCommands {
       crowdSourceStore.setTaskId(workerInitialLocation.getLocationId());
       pCrowdSourceStoreList.add(crowdSourceStore);
       pLocationMap.remove(workerTaskDistances.get(0).getLocationId());
+    }
+  }
+
+  private void getDistanceFromLocation(Map<Long, SpatialData> pLocationMap, SpatialData pWorkerInitialLocation, List<WorkerTaskDistance> pWorkerTaskDistances, String pDate, Long userId) {
+    for (Map.Entry<Long, SpatialData> entry : pLocationMap.entrySet()) {
+      SpatialData spatialData = pLocationMap.get(entry.getKey());
+      double latDistance = Math.toRadians(spatialData.getLatitude() - pWorkerInitialLocation.getLatitude());
+      double longDistance = Math.toRadians(spatialData.getLongitude() - pWorkerInitialLocation.getLongitude());
+      Double distance = distance(pWorkerInitialLocation.getLatitude(), pWorkerInitialLocation.getLongitude(), spatialData.getLatitude(), spatialData.getLongitude(), 'N');
+      if (spatialData.getCheckInTimes().after(pWorkerInitialLocation.getCheckInTimes()))
+        pWorkerTaskDistances.add(new WorkerTaskDistance(pWorkerInitialLocation.getUserId(), spatialData.getLocationId(), distance));
+      else {
+        if (spatialData.getLocationId() != null)
+          mRejectionRepository.save(new Rejection(pDate, userId, spatialData.getLocationId()));
+      }
     }
   }
 
